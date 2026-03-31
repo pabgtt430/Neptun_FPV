@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <title>Neptun FPV - Stable Edition</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+        canvas { display: block; background: radial-gradient(circle, #1a2a6c, #111); }
+        
+        #loading-screen {
+            position: absolute; width: 100%; height: 100%; background: #111;
+            display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 10;
+        }
+        #loading-screen h1 { color: #00d2ff; font-size: 80px; text-shadow: 0 0 20px #00d2ff; margin-bottom: 30px; }
+        
+        .color-picker { margin-bottom: 30px; display: flex; gap: 20px; }
+        .color-option { width: 45px; height: 45px; border-radius: 50%; cursor: pointer; border: 3px solid white; }
+        .active { border-color: #ffeb3b; box-shadow: 0 0 15px #ffeb3b; }
+
+        #start-btn {
+            padding: 15px 50px; font-size: 24px; color: #fff; background: #00d2ff;
+            border: none; border-radius: 50px; cursor: pointer;
+        }
+
+        #ui { position: absolute; top: 20px; left: 20px; color: #0f0; background: rgba(0,0,0,0.7); padding: 15px; border: 2px solid #0f0; display: none; }
+        #author-tag { position: absolute; bottom: 20px; right: 20px; padding: 10px 20px; background: rgba(0,0,0,0.8); border: 2px solid #00d2ff; color: #fff; }
+    </style>
+</head>
+<body>
+
+    <div id="loading-screen">
+        <h1>Neptun FPV</h1>
+        <div style="color: white; margin-bottom: 10px;">ОБЕРИ КОЛІР:</div>
+        <div class="color-picker">
+            <div class="color-option active" style="background: #00d2ff;" data-color="#00d2ff"></div>
+            <div class="color-option" style="background: #ff3333;" data-color="#ff3333"></div>
+            <div class="color-option" style="background: #33ff33;" data-color="#33ff33"></div>
+        </div>
+        <button id="start-btn">START FLIGHT</button>
+    </div>
+
+    <div id="ui">
+        <div style="font-size: 24px;">SCORE: <span id="score">0</span> / 10</div>
+        <div id="status">RC: WAITING...</div>
+    </div>
+
+    <div id="author-tag">Work by: Andrey</div>
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const startBtn = document.getElementById('start-btn');
+const loadingScreen = document.getElementById('loading-screen');
+const ui = document.getElementById('ui');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let isGameRunning = false;
+let score = 0;
+let droneColor = '#00d2ff';
+let keys = {};
+let drone = { x: canvas.width/2, y: canvas.height/2, vx: 0, vy: 0, angle: 0 };
+let gate = { x: -100, y: -100 };
+
+// Вибір кольору
+document.querySelectorAll('.color-option').forEach(opt => {
+    opt.onclick = () => {
+        document.querySelectorAll('.color-option').forEach(el => el.classList.remove('active'));
+        opt.classList.add('active');
+        droneColor = opt.getAttribute('data-color');
+    };
+});
+
+function spawnGate() {
+    gate.x = 100 + Math.random() * (canvas.width - 200);
+    gate.y = 100 + Math.random() * (canvas.height - 200);
+}
+
+startBtn.onclick = () => {
+    loadingScreen.style.display = 'none';
+    ui.style.display = 'block';
+    isGameRunning = true;
+    spawnGate();
+};
+
+window.onkeydown = e => keys[e.code] = true;
+window.onkeyup = e => keys[e.code] = false;
+
+function loop() {
+    if (isGameRunning) {
+        let thrust = 0, rotate = 0;
+        const gps = navigator.getGamepads()[0];
+
+        if (gps) {
+            document.getElementById('status').innerText = "RC: CONNECTED";
+            thrust = (gps.axes[1] * -1 + 1) / 2;
+            rotate = gps.axes[0] * 0.08;
+        }
+        
+        if (keys['KeyW'] || keys['ArrowUp']) thrust = 0.8;
+        if (keys['KeyA'] || keys['ArrowLeft']) rotate = -0.07;
+        if (keys['KeyD'] || keys['ArrowRight']) rotate = 0.07;
+
+        if (thrust > 0.1) {
+            drone.vx += Math.sin(drone.angle) * thrust * 0.5;
+            drone.vy -= Math.cos(drone.angle) * thrust * 0.5;
+        }
+        drone.angle += rotate;
+        drone.vy += 0.12; 
+        drone.vx *= 0.98;
+        drone.vy *= 0.98;
+        drone.x += drone.vx;
+        drone.y += drone.vy;
+
+        // Межі екрана
+        if (drone.x < 0) drone.x = canvas.width;
+        if (drone.x > canvas.width) drone.x = 0;
+        if (drone.y < 0) drone.y = canvas.height;
+        if (drone.y > canvas.height) drone.y = 0;
+
+        // Перевірка воріт
+        if (Math.hypot(drone.x - gate.x, drone.y - gate.y) < 50) {
+            score++;
+            document.getElementById('score').innerText = score;
+            spawnGate();
+        }
+    }
+
+    draw();
+    requestAnimationFrame(loop);
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (isGameRunning) {
+        // Ворота
+        ctx.beginPath();
+        ctx.arc(gate.x, gate.y, 40, 0, Math.PI * 2);
+        ctx.strokeStyle = '#ffff00';
+        ctx.lineWidth = 5;
+        ctx.stroke();
+
+        // Дрон
+        ctx.save();
+        ctx.translate(drone.x, drone.y);
+        ctx.rotate(drone.angle);
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(-20, -20); ctx.lineTo(20, 20);
+        ctx.moveTo(20, -20); ctx.lineTo(-20, 20);
+        ctx.stroke();
+        ctx.fillStyle = droneColor;
+        ctx.beginPath(); ctx.arc(-20, -20, 6, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(20, -20, 6, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = "#333";
+        ctx.fillRect(-7, -15, 14, 30);
+        ctx.restore();
+    }
+}
+
+loop(); // Запуск циклу відразу
+</script>
+</body>
+</html>
